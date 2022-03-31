@@ -93,8 +93,23 @@ services:
       - elk
     ports:
       - 22181:2181
+  zookeeper-add-kafka-users:
+    image: confluentinc/cp-kafka:latest
+    container_name: "zookeeper-add-kafka-users"
+    depends_on:
+      - zookeeper
+    command: "bash -c 'echo Waiting for Zookeeper to be ready... && \
+                          cub zk-ready zookeeper:2181 120 && \
+                          kafka-configs --zookeeper zookeeper:2181 --alter --add-config 'SCRAM-SHA-256=[iterations=4096,password=kafka]' --entity-type users --entity-name kafka'"
+    environment:
+      KAFKA_BROKER_ID: ignored
+      KAFKA_ZOOKEEPER_CONNECT: ignored
+    networks:
+      - elk
   kafka:
     image: confluentinc/cp-kafka:latest
+    volumes:
+      - ./kafka/certificates:/etc/kafka/certificates
     depends_on:
       - zookeeper
     ports:
@@ -106,10 +121,21 @@ services:
       KAFKA_LISTENERS: INTERNAL://0.0.0.0:9092,OUTSIDE://0.0.0.0:29092
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
       KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,OUTSIDE://localhost:29092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,OUTSIDE:PLAINTEXT
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,OUTSIDE:SASL_SSL
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-
+      KAFKA_SSL_KEYSTORE_LOCATION: /etc/kafka/certificates/server.keystore.jks
+      KAFKA_SSL_KEYSTORE_PASSWORD: secret
+      KAFKA_SSL_KEYSTORE_TYPE: JKS
+      KAFKA_SSL_KEY_PASSWORD: secret
+      KAFKA_SSL_TRUSTSTORE_LOCATION: /etc/kafka/certificates/server.truststore.jks
+      KAFKA_SSL_TRUSTSTORE_PASSWORD: secret
+      KAFKA_SSL_TRUSTSTORE_TYPE: JKS
+      KAFKA_LISTENER_NAME_OUTSIDE_SASL_ENABLED_MECHANISMS: SCRAM-SHA-256
+      KAFKA_LISTENER_NAME_OUTSIDE_SCRAM-SHA-256_SASL_JAAS_CONFIG: |
+        org.apache.kafka.common.security.scram.ScramLoginModule required \
+           username="kafka" \
+           password="kafka";
 networks:
   elk:
     driver: bridge
